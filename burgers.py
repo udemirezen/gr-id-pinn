@@ -6,6 +6,8 @@ Testing out the PINN method on Burger's equation.
 
 import tensorflow as tf
 import numpy as np
+import matplotlib as mpl
+mpl.use('tkagg')
 import matplotlib.pyplot as plt
 
 seed = 84
@@ -34,7 +36,7 @@ for l in range(0, len(layers)-1):
     biases.append(b)
 
 # Now, define function for a forward pass
-# (Isn't there soddme tf short-hand pre-implemented function for this sort of thing?)
+# (Isn't there some tf short-hand pre-implemented function for this sort of thing?)
 def forward_pass(X, weights, biases):
     H = X
     for l in range(0, len(weights)-1):
@@ -46,20 +48,11 @@ def forward_pass(X, weights, biases):
     Y = tf.add(tf.matmul(H, W), b) # No activation on final layer I guess
     return Y
 
-# Define domain, bounds, initial conditions
+# Define domain
 x_min = -1.0
 x_max = +1.0
 t_min = 0.
 t_max = 1.
-
-u_left = 0.
-u_right = 0.
-
-def u_0(x):
-    return np.sin(np.pi*((2.*(x-x_min)/(x_max-x_min))-1.))
-
-# Generate training / regularization data
-#To-do
 
 # Define solution evaluation function, and equation satisfaction constraint
 def u(t, x):
@@ -67,6 +60,16 @@ def u(t, x):
     X_norm = (2.*(x - x_min)/(x_max - x_min)) - 1.
     u = forward_pass(tf.stack([T_norm, X_norm], axis=1), weights, biases)
     return tf.squeeze(u)
+
+def u_x(t, x):
+    u_val = u(t, x)
+    u_x = tf.gradients(u_val, x)[0]
+    return u_x
+
+def u_t(t, x):
+    u_val = u(t, x)
+    u_t = tf.gradients(u_val, t)[0]
+    return u_t
 
 def f(t, x):
     u_val = u(t, x)
@@ -76,41 +79,57 @@ def f(t, x):
     f_val = u_t + u_val*u_x - (0.01/np.pi)*u_xx # Viscosity coefficient hard-coded here
     return f_val
 
+# Create place-holders for input & temporary variables
+with tf.name_scope("Placeholders"):
+    f_t = tf.compat.v1.placeholder(tf.float32, shape=[None])
+    f_x = tf.compat.v1.placeholder(tf.float32, shape=[None])
+    u_t_init = tf.compat.v1.placeholder(tf.float32, shape=[None])
+    u_x_init = tf.compat.v1.placeholder(tf.float32, shape=[None])
+    u_init = tf.compat.v1.placeholder(tf.float32, shape=[None])
+    u_t_boundary = tf.compat.v1.placeholder(tf.float32, shape=[None])
+    u_x_boundary = tf.compat.v1.placeholder(tf.float32, shape=[None])
+    u_boundary = tf.compat.v1.placeholder(tf.float32, shape=[None])
+
+# Create tf graphs for calculating stuff
+u_init_pred = u(u_t_init, u_x_init)
+u_boundary_pred = u(u_t_boundary, u_x_boundary)
+u_t_boundary_pred = u_t(u_t_boundary, u_x_boundary)
+u_x_boundary_pred = u_x(u_t_boundary, u_x_boundary)
+f_pred = f(f_t, f_x)
+
 # Define loss function and optimization algorithm.
 #To-do
 
 # Initialize variables, create session:
-sess = tf.Session()
+sess = tf.compat.v1.Session()
 init = tf.compat.v1.global_variables_initializer()
 sess.run(init)
 
-# Create place-holders for input & temporary variables
-with tf.name_scope("Placeholders"):
-    f_t = tf.placeholder(tf.float32, shape=[None])
-    f_x = tf.placeholder(tf.float32, shape=[None])
-    u_i_t = tf.placeholder(tf.float32, shape=[None])
-    u_i_x = tf.placeholder(tf.float32, shape=[None])
-    u_i = tf.placeholder(tf.float32, shape=[None])
-    u_b_t = tf.placeholder(tf.float32, shape=[None])
-    u_b_x = tf.placeholder(tf.float32, shape=[None])
-    u_b = tf.placeholder(tf.float32, shape=[None])
+# Define boundary and initial conditions
+u_left = 0.
+u_right = 0.
+def u_0(x):
+    return np.sin(np.pi*((2.*(x-x_min)/(x_max-x_min))-1.))
 
-# Create tf graphs for calculating stuff
-u_init_pred = u(u_i_t, u_i_x)
+# Generate training / regularization data
+#To-do
 
 # Train
 #To-do
 
 # Display
 
-# Lets test that the network is built correctly
-print("Weights:")
-print(weights)
-print("Biases:")
-print(biases)
-# Test that forward-pass works
-t_arr = tf.constant([0.5,])
-x_arr = tf.constant([0.3,])
+# Do a simple forward pass
+N_t = 100
+N_x = 100
+N_consistency = 1000
+t = np.linspace(t_min, t_max, N_t)
+x = np.linspace(x_min, x_max, N_x)
 
-print(u(t_arr, x_arr))
-print(f(t_arr, x_arr))
+u_init_pred_result = sess.run(u_init_pred, {u_x_init:x, u_t_init:np.zeros(N_x)})
+
+plt.plot(x, u_init_pred_result, label="NN")
+plt.plot(x, u_0(x), label="Initial Condition")
+plt.legend()
+plt.show()
+
