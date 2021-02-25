@@ -19,11 +19,11 @@ except:
 # ---------- Hyperparams ---------- #
 # These are just guesses for reasonable values
 # Data params
-num_interior_pts = 200  # Number of points to sample in the interior of the box
-num_bound_pts = 50  # Number of points to sample on each boundary
+num_interior_pts = 2000  # Number of points to sample in the interior of the box
+num_bound_pts = 500  # Number of points to sample on each boundary
 # Training params
-num_epochs = 1001  # Number of training iterations to go through.
-learning_rate = 3e-3  # Uhhhhh learning rate.
+num_epochs = 10001  # Number of training iterations to go through.
+learning_rate = 1e-3  # Uhhhhh learning rate.
 solution_weight = 1.0  # The weight of the error of the Laplace equation.
 bound_weight = 1.0  # The weight of the error of the boundary conditions.
 
@@ -63,11 +63,13 @@ output = dense3(dense2(dense1(inputs)))
 # This "model" is 'f' because it takes in x, y, z and spits out a value.
 model = keras.Model(inputs=inputs, outputs=output)
 
+
 # ---------- Train ---------- #
-for i in range(num_epochs):
+# Fancy pants python decorator magic that speeds up computation by like an order of magnitude.
+@tf.function
+def trainfunc():
     # The gradient tape basically keeps tracks of the variables so it can reverse-autodiff
-    # I'm really not to sure on this gradient tape business / I don't really quite understand it
-    #   yet, but it works.
+    # I don't really quite fully understand it this gradient tape business yet, but it works.
     with tf.GradientTape() as lossTape:
         # These are the interior sample points. Explicitly state end of slice to keep dimensions.
         x = interior_pts[:, 0:1]
@@ -75,8 +77,8 @@ for i in range(num_epochs):
         z = interior_pts[:, 2:3]
         # Need persistent = true on this one so the gradients aren't wiped after the first
         #   call to div_tape.gradient (I think? Something like that)
-        # I think TF caches the graph defined here for performance reasons but I'm not sure. I don't
-        #   think it defines it each run of the loop.
+        # I think TF caches the graph defined here for performance reasons. I don't
+        #   think it constructs it each run of the loop.
         with tf.GradientTape(persistent=True) as div_tape:
             # Need to "watch" these tensors so the gradient tape remembers to keep track of them.
             #   Otherwise (I think) they'll be crunched down for optimization purposes. You don't
@@ -116,27 +118,34 @@ for i in range(num_epochs):
     grads = lossTape.gradient(total_loss, model.trainable_weights)
     optimizer.apply_gradients(zip(grads, model.trainable_weights))
 
+    return total_loss
+
+
+for i in range(num_epochs):
+    total_loss = trainfunc()
+
     if i % 100 == 0:
         print("Epoch: {}\tLoss: {}".format(i, total_loss))
 
+gridsize = 100
 # Save plots of final solution to the Laplace equation.
 # x-y plane along z=0.5:
-mesh = np.meshgrid(np.linspace(0, 1, 25), np.linspace(0, 1, 25))
+mesh = np.meshgrid(np.linspace(0, 1, gridsize), np.linspace(0, 1, gridsize))
 coords = np.concatenate((mesh[0].reshape(-1, 1), mesh[1].reshape(-1, 1)), axis=1)
-coords = np.concatenate((coords, np.ones((25 * 25, 1)) * 0.5), axis=1)
+coords = np.concatenate((coords, np.ones((gridsize * gridsize, 1)) * 0.5), axis=1)
 img = model(coords)
 plt.figure()
 plt.title("x-y plane at z=0.5")
-plt.imshow(img.numpy().reshape(25, 25), vmin=0, vmax=1, extent=(0, 1, 0, 1))
+plt.imshow(img.numpy().reshape(gridsize, gridsize), vmin=0, vmax=1, extent=(0, 1, 0, 1))
 plt.colorbar()
 plt.savefig("output-xy.png")
 
 # y-z plane along x=0.5:
 coords = np.concatenate((mesh[0].reshape(-1, 1), mesh[1].reshape(-1, 1)), axis=1)
-coords = np.concatenate((np.ones((25 * 25, 1)) * 0.5, coords), axis=1)
+coords = np.concatenate((np.ones((gridsize * gridsize, 1)) * 0.5, coords), axis=1)
 img = model(coords)
 plt.figure()
 plt.title("y-z plane at x=0.5")
-plt.imshow(img.numpy().reshape(25, 25), vmin=0, vmax=1, extent=(0, 1, 0, 1))
+plt.imshow(img.numpy().reshape(gridsize, gridsize), vmin=0, vmax=1, extent=(0, 1, 0, 1))
 plt.colorbar()
 plt.savefig("output-yz.png")
