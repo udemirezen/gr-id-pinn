@@ -99,10 +99,6 @@ u_boundary_xmin_pred = u(t_boundary_xmin, x_boundary_xmin)
 u_boundary_xmax_pred = u(t_boundary_xmax, x_boundary_xmax)
 f_pred = f(t_int, x_int)
 
-# Initialize variables, create session:
-sess = tf.compat.v1.Session()
-init = tf.compat.v1.global_variables_initializer()
-sess.run(init)
 
 # Define initial conditions
 def u_0(x):
@@ -117,11 +113,15 @@ boundary_loss = tf.reduce_mean(tf.square(u_boundary_xmin_pred - u_boundary_xmax_
 
 loss = initial_loss + interior_loss + boundary_loss
 
-optimizer = tf.compat.v1.train.AdamOptimizer(
-    learning_rate=0.001, beta1=0.9, beta2=0.999, epsilon=1e-08, use_locking=False,
-    name='Adam'
-)
-
+# optimizer = tf.contrib.opt.ScipyOptimizerInterface(loss,
+#                                                    method='L-BFGS-B',
+#                                                    options={'maxiter':40000,
+#                                                             'maxfun':100000,
+#                                                             'maxcor': 50,
+#                                                             'maxls': 50,
+#                                                             'ftol': 1.0*np.finfo(float).eps})
+optimizer = tf.train.AdamOptimizer(learning_rate=1e-1)
+opt = optimizer.minimize(loss, var_list=tf.trainable_variables())
 
 # Generate training / regularization data
 #To-do
@@ -161,9 +161,18 @@ tf_dict = {t_init: X_initial_train[0,:],
            t_boundary_xmax: t,
            x_boundary_xmax: x_max*np.ones(N_t)}
 
-train_op = optimizer.minimize(loss, var_list=tf.compat.v1.trainable_variables())
+# Initialize variables, create session:
+sess = tf.compat.v1.Session()
+init = tf.compat.v1.global_variables_initializer()
+sess.run(init)
 
-sess.run(train_op, feed_dict=tf_dict)
+for i in range(1000):
+    _, loss_num = sess.run([opt, loss], feed_dict=tf_dict)
+    if i % 10 == 0:
+        print("Epoch:{} Loss: {}".format(i, loss_num))
+    # optimizer.minimize(sess, feed_dict=tf_dict,
+    #                    fetches=[loss, interior_loss, initial_loss, boundary_loss])
+
 
 # Display
 
