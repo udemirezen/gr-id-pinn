@@ -27,7 +27,7 @@ def xavier_init(size):
     return tf.Variable(tf.random.truncated_normal([in_dim, out_dim], stddev=xavier_stddev), dtype=tf.float32)
 
 # First, construct & initialize the network:
-layers = [2, 100, 100, 1] # Layer sizes
+layers = [2, 20, 20, 1] # Layer sizes
 weights = []
 biases = []
 for l in range(0, len(layers)-1):
@@ -117,13 +117,10 @@ boundary_loss = tf.reduce_mean(tf.square(u_boundary_xmin_pred - u_boundary_xmax_
 
 loss = initial_loss + interior_loss + boundary_loss
 
-optimizer = tf.contrib.opt.ScipyOptimizerInterface(loss,
-                                                   method='L-BFGS-B',
-                                                   options={'maxiter':40000,
-                                                            'maxfun':100000,
-                                                            'maxcor': 50,
-                                                            'maxls': 50,
-                                                            'ftol': 1.0*np.finfo(float).eps})
+optimizer = tf.compat.v1.train.AdamOptimizer(
+    learning_rate=0.001, beta1=0.9, beta2=0.999, epsilon=1e-08, use_locking=False,
+    name='Adam'
+)
 
 
 # Generate training / regularization data
@@ -164,8 +161,9 @@ tf_dict = {t_init: X_initial_train[0,:],
            t_boundary_xmax: t,
            x_boundary_xmax: x_max*np.ones(N_t)}
 
-optimizer.minimize(sess, feed_dict=tf_dict,
-                   fetches=[loss, interior_loss, initial_loss, boundary_loss])
+train_op = optimizer.minimize(loss, var_list=tf.compat.v1.trainable_variables())
+
+sess.run(train_op, feed_dict=tf_dict)
 
 # Display
 
