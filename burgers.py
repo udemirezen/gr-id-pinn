@@ -27,7 +27,8 @@ def xavier_init(size):
     return tf.Variable(tf.random.truncated_normal([in_dim, out_dim], stddev=xavier_stddev), dtype=tf.float32)
 
 # First, construct & initialize the network:
-layers = [2, 32, 32, 1] # Layer sizes
+layers = [2, 8, 8, 8, 8, 8, 8, 8, 16, 16, 16, 32, 32, 32, 8, 1] # Layer sizes
+#layers = [2, 20, 20, 20, 20, 20, 20, 20, 20, 1] # Suposedly they did well with this? Doesn't work well for me.
 weights = []
 biases = []
 for l in range(0, len(layers)-1):
@@ -109,9 +110,10 @@ def u_0(x):
 
 initial_loss = tf.reduce_mean(tf.square(u_init_pred - u_init))
 interior_loss = tf.reduce_mean(tf.square(f_pred))
-boundary_loss = tf.reduce_mean(tf.square(u_boundary_xmin_pred - u_boundary_xmax_pred))
+boundary_loss = tf.reduce_mean(tf.square(u_boundary_xmin_pred) + tf.square(u_boundary_xmax_pred))
 
-loss = 10*initial_loss + interior_loss + boundary_loss
+loss1 = 10*(initial_loss + boundary_loss)
+loss2 = 100*initial_loss + interior_loss + 10*boundary_loss
 
 # optimizer = tf.contrib.opt.ScipyOptimizerInterface(loss,
 #                                                    method='L-BFGS-B',
@@ -121,23 +123,16 @@ loss = 10*initial_loss + interior_loss + boundary_loss
 #                                                             'maxls': 50,
 #                                                             'ftol': 1.0*np.finfo(float).eps})
 optimizer = tf.train.AdamOptimizer(learning_rate=3e-4)
-opt = optimizer.minimize(loss, var_list=tf.trainable_variables())
+opt1 = optimizer.minimize(loss1, var_list=tf.trainable_variables())
+opt2 = optimizer.minimize(loss2, var_list=tf.trainable_variables())
 
 # Generate training / regularization data
 #To-do
-N_t = 500
-N_x = 500
-N_consistency = 5000
+N_t = 100
+N_x = 100
+N_consistency = 10000
 t = np.linspace(t_min, t_max, N_t)
 x = np.linspace(x_min, x_max, N_x)
-
-#T, X = np.meshgrid(t, x)
-## What is X_star???
-## Has shape (N_pred ** 3, 3)
-#X_star = np.hstack((T.flatten()[:, None], X.flatten()[:, None]))
-## Domain bounds for t, x, and v. Equivelant to taking +/- of largest {t,x,v}_max value (I think)
-#lb = X_star.min(0)
-#ub = X_star.max(0)
 
 lb = np.array([t_min, x_min])
 ub = np.array([t_max, x_max])
@@ -154,32 +149,66 @@ X_interior_train = lb + (ub - lb)*lhs(2, N_consistency)
 num_batches = 5
 X_interior_train_batches = np.array_split(X_interior_train, num_batches)
 
-tf_dict = []
+tf_dict1 = {t_init: X_initial_train[0,:],
+            x_init: X_initial_train[1,:],
+            u_init: Y_initial_train,
+            t_boundary_xmin: t,
+            x_boundary_xmin: x_min*np.ones(N_t),
+            t_boundary_xmax: t,
+            x_boundary_xmax: x_max*np.ones(N_t)}
+
+tf_dict2 = []
 for i in range(num_batches):
-	tf_dict.append({t_init: X_initial_train[0,:],
-                    x_init: X_initial_train[1,:],
-                    u_init: Y_initial_train,
-                    t_int: X_interior_train_batches[i][:, 0],
-                    x_int: X_interior_train_batches[i][:, 1],
-                    t_boundary_xmin: t,
-                    x_boundary_xmin: x_min*np.ones(N_t),
-                    t_boundary_xmax: t,
-                    x_boundary_xmax: x_max*np.ones(N_t)})
+	tf_dict2.append({t_init: X_initial_train[0,:],
+                     x_init: X_initial_train[1,:],
+                     u_init: Y_initial_train,
+                     t_int: X_interior_train_batches[i][:, 0],
+                     x_int: X_interior_train_batches[i][:, 1],
+                     t_boundary_xmin: t,
+                     x_boundary_xmin: x_min*np.ones(N_t),
+                     t_boundary_xmax: t,
+                     x_boundary_xmax: x_max*np.ones(N_t)})
 
 # Initialize variables, create session:
 sess = tf.compat.v1.Session()
 init = tf.compat.v1.global_variables_initializer()
 sess.run(init)
 
-for i in range(10000):
+print("Pretraining:")
+for i in range(1500):
+	_, loss_num = sess.run([opt1, loss1], feed_dict=tf_dict1)
+	if i % 10 == 0:
+		print("Epoch:{} Loss: {}".format(i, loss_num))
+
+u_init_pred_result = sess.run(u_init_pred, {x_init:x, t_init:np.zeros(N_x)})
+u_pred_result_1 = sess.run(u_init_pred, {x_init:x, t_init:0.1*np.ones(N_x)})
+u_pred_result_2 = sess.run(u_init_pred, {x_init:x, t_init:0.2*np.ones(N_x)})
+u_pred_result_3 = sess.run(u_init_pred, {x_init:x, t_init:0.3*np.ones(N_x)})
+u_pred_result_4 = sess.run(u_init_pred, {x_init:x, t_init:0.4*np.ones(N_x)})
+u_pred_result_5 = sess.run(u_init_pred, {x_init:x, t_init:0.5*np.ones(N_x)})
+
+plt.plot(x, u_init_pred_result, label="NN")
+plt.plot(x, u_0(x), label="Initial Condition")
+plt.plot(x, u_pred_result_1, label="NN at t=0.1")
+plt.plot(x, u_pred_result_2, label="NN at t=0.2")
+plt.plot(x, u_pred_result_3, label="NN at t=0.3")
+plt.plot(x, u_pred_result_4, label="NN at t=0.4")
+plt.plot(x, u_pred_result_5, label="NN at t=0.5")
+plt.legend()
+plt.show()
+
+print("Training:")
+for i in range(0, 10000//num_batches):
     loss_num = 0.
     # Iterate over mini-batches
     for j in range(num_batches):
-        _, temp_loss_num = sess.run([opt, loss], feed_dict=tf_dict[j])
+        _, temp_loss_num = sess.run([opt2, loss2], feed_dict=tf_dict2[j])
         loss_num += temp_loss_num
     #
     if i % 10 == 0:
-        print("Epoch:{} Loss: {}".format(i, loss_num))
+        print("Epoch:{} Loss: {}".format(i, loss_num/num_batches))
+        if loss_num/num_batches < 0.01:
+        	break
     # optimizer.minimize(sess, feed_dict=tf_dict,
     #                    fetches=[loss, interior_loss, initial_loss, boundary_loss])
 
